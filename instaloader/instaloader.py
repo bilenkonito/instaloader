@@ -356,6 +356,12 @@ class Instaloader:
         self.context.write_raw(resp, filename)
         os.utime(filename, (datetime.now().timestamp(), mtime.timestamp()))
         return True
+    
+    def get_post_json_structure(self, structure: Post) -> dict:
+        """Returns a JSON structure of a structure."""
+        structure._obtain_iphone_struct()
+        structure._obtain_metadata()
+        return structure._asdict()
 
     def save_metadata_json(self, filename: str, structure: JsonExportable) -> None:
         """Saves metadata JSON file of a structure."""
@@ -718,36 +724,37 @@ class Instaloader:
         downloaded = True
         if post.typename == 'GraphSidecar':
             if self.download_pictures or self.download_videos:
-                if not _all_already_downloaded(
-                        filename_template, enumerate(
-                            (post.get_is_videos()[i]
-                             for i in range(self.slide_start % post.mediacount, self.slide_end % post.mediacount + 1)),
-                            start=self.slide_start % post.mediacount + 1
-                        )
-                ):
-                    for edge_number, sidecar_node in enumerate(
-                            post.get_sidecar_nodes(self.slide_start, self.slide_end),
-                            start=self.slide_start % post.mediacount + 1
+                if not (post.mediacount) == 0: # make sure post hasnt been edited / removed
+                    if not _all_already_downloaded(
+                            filename_template, enumerate(
+                                (post.get_is_videos()[i]
+                                for i in range(self.slide_start % post.mediacount, self.slide_end % post.mediacount + 1)),
+                                start=self.slide_start % post.mediacount + 1
+                            )
                     ):
-                        suffix: Optional[str] = str(edge_number)
-                        if '{filename}' in self.filename_pattern:
-                            suffix = None
-                        if self.download_pictures and (not sidecar_node.is_video or self.download_video_thumbnails):
-                            # pylint:disable=cell-var-from-loop
-                            sidecar_filename = self.__prepare_filename(filename_template,
-                                                                       lambda: sidecar_node.display_url)
-                            # Download sidecar picture or video thumbnail (--no-pictures implies --no-video-thumbnails)
-                            downloaded &= self.download_pic(filename=sidecar_filename, url=sidecar_node.display_url,
-                                                            mtime=post.date_local, filename_suffix=suffix)
-                        if sidecar_node.is_video and self.download_videos:
-                            # pylint:disable=cell-var-from-loop
-                            sidecar_filename = self.__prepare_filename(filename_template,
-                                                                       lambda: sidecar_node.video_url)
-                            # Download sidecar video if desired
-                            downloaded &= self.download_pic(filename=sidecar_filename, url=sidecar_node.video_url,
-                                                            mtime=post.date_local, filename_suffix=suffix)
-                else:
-                    downloaded = False
+                        for edge_number, sidecar_node in enumerate(
+                                post.get_sidecar_nodes(self.slide_start, self.slide_end),
+                                start=self.slide_start % post.mediacount + 1
+                        ):
+                            suffix: Optional[str] = str(edge_number)
+                            if '{filename}' in self.filename_pattern:
+                                suffix = None
+                            if self.download_pictures and (not sidecar_node.is_video or self.download_video_thumbnails):
+                                # pylint:disable=cell-var-from-loop
+                                sidecar_filename = self.__prepare_filename(filename_template,
+                                                                        lambda: sidecar_node.display_url)
+                                # Download sidecar picture or video thumbnail (--no-pictures implies --no-video-thumbnails)
+                                downloaded &= self.download_pic(filename=sidecar_filename, url=sidecar_node.display_url,
+                                                                mtime=post.date_local, filename_suffix=suffix)
+                            if sidecar_node.is_video and self.download_videos:
+                                # pylint:disable=cell-var-from-loop
+                                sidecar_filename = self.__prepare_filename(filename_template,
+                                                                        lambda: sidecar_node.video_url)
+                                # Download sidecar video if desired
+                                downloaded &= self.download_pic(filename=sidecar_filename, url=sidecar_node.video_url,
+                                                                mtime=post.date_local, filename_suffix=suffix)
+                    else:
+                        downloaded = False
         elif post.typename == 'GraphImage':
             # Download picture
             if self.download_pictures:
@@ -1152,11 +1159,13 @@ class Instaloader:
         .. versionchanged:: 4.2.9
            Require being logged in (as required by Instagram)
         """
-        yield from SectionIterator(
+        yield from NodeIterator(
             self.context,
-            lambda d: d["native_location_data"]["recent"],
-            lambda m: Post.from_iphone_struct(self.context, m),
-            f"explore/locations/{location}/",
+            'ac38b90f0f3981c42092016a37c59bf7',
+            lambda d: d['data']['location']['edge_location_to_media'],
+            lambda n: Post(self.context, n),
+            {'id': location},
+            f"https://www.instagram.com/explore/locations/{location}/"
         )
 
     @_requires_login
